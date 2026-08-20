@@ -1,0 +1,911 @@
+# Paquete Home Assistant para VNish 1.3.5 / Antminer S19 Pro
+# IP actual del minero: 192.168.1.108
+#
+# Instalacion:
+# 1. Copia este archivo a /config/packages/vnish_antminer_package.yaml
+# 2. En configuration.yaml habilita los paquetes:
+#
+#    homeassistant:
+#      packages: !include_dir_named packages
+#
+# 3. Anade a /config/secrets.yaml:
+#
+#    vnish_password: "root"
+#
+# 4. Reinicia Home Assistant.
+#
+# Todos los comandos se ejecutan desde Home Assistant dentro de la red local.
+# Nabu Casa solo da acceso remoto a las entidades de HA; no expone VNish a Internet.
+
+rest:
+  - resource: http://192.168.1.108/api/v1/summary
+    scan_interval: 15
+    timeout: 8
+    sensor:
+      - name: "VNish estado API"
+        unique_id: vnish_estado_api
+        icon: mdi:pickaxe
+        value_template: >-
+          {% if value_json.miner is defined and value_json.miner.miner_status is defined %}
+            {{ value_json.miner.miner_status.miner_state | default('desconocido', true) }}
+          {% else %}
+            desconocido
+          {% endif %}
+
+      - name: "VNish hashrate"
+        unique_id: vnish_hashrate_api
+        state_class: measurement
+        unit_of_measurement: "TH/s"
+        icon: mdi:speedometer
+        value_template: >-
+          {% set hr = value_json.miner.hr_average | default(0) | float(0) %}
+          {{ (hr / 1000) | round(2) }}
+
+      - name: "VNish temperatura chips"
+        unique_id: vnish_temperatura_chips_api
+        device_class: temperature
+        state_class: measurement
+        unit_of_measurement: "°C"
+        value_template: >-
+          {% if value_json.miner is defined and value_json.miner.chip_temp is defined %}
+            {{ value_json.miner.chip_temp.max | default(0) | float(0) | round(1) }}
+          {% else %}
+            0
+          {% endif %}
+
+      - name: "VNish temperatura PCB"
+        unique_id: vnish_temperatura_pcb_api
+        device_class: temperature
+        state_class: measurement
+        unit_of_measurement: "°C"
+        value_template: >-
+          {% if value_json.miner is defined and value_json.miner.pcb_temp is defined %}
+            {{ value_json.miner.pcb_temp.max | default(0) | float(0) | round(1) }}
+          {% else %}
+            0
+          {% endif %}
+
+      - name: "VNish placas activas"
+        unique_id: vnish_placas_activas_api
+        icon: mdi:expansion-card
+        value_template: >-
+          {% set ns = namespace(activas=0) %}
+          {% if value_json.miner is defined %}
+            {% for placa in value_json.miner.chains | default([], true) %}
+              {% set estado = placa.status.state | default('', true) | lower %}
+              {% if estado in ['mining', 'tuning', 'initializing'] or
+                    placa.hashrate_rt | default(0) | float(0) > 0 %}
+                {% set ns.activas = ns.activas + 1 %}
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+          {{ ns.activas }}
+
+      - name: "VNish modo reducido"
+        unique_id: vnish_throttled_api
+        icon: mdi:gauge-low
+        value_template: >-
+          {% if value_json.miner is defined and value_json.miner.miner_status is defined %}
+            {{ value_json.miner.miner_status.throttled | default(0) | int(0) }}
+          {% else %}
+            0
+          {% endif %}
+
+      - name: "VNish consumo"
+        unique_id: vnish_consumo_api
+        device_class: power
+        state_class: measurement
+        unit_of_measurement: "W"
+        icon: mdi:lightning-bolt
+        value_template: >-
+          {{ value_json.miner.power_consumption | default(0) | float(0) | round(0) }}
+
+      - name: "VNish eficiencia"
+        unique_id: vnish_eficiencia_api
+        state_class: measurement
+        unit_of_measurement: "W/TH"
+        icon: mdi:leaf
+        value_template: >-
+          {{ value_json.miner.power_efficiency | default(0) | float(0) | round(2) }}
+
+      - name: "VNish ventiladores porcentaje"
+        unique_id: vnish_ventiladores_porcentaje_api
+        state_class: measurement
+        unit_of_measurement: "%"
+        icon: mdi:fan-speed-3
+        value_template: >-
+          {{ value_json.miner.cooling.fan_duty | default(0) | int(0) }}
+
+      - name: "VNish modo ventiladores"
+        unique_id: vnish_modo_ventiladores_api
+        icon: mdi:fan-auto
+        value_template: >-
+          {{ value_json.miner.cooling.settings.mode.name | default('desconocido', true) }}
+
+      - name: "VNish temperatura objetivo ventiladores"
+        unique_id: vnish_temperatura_objetivo_ventiladores_api
+        device_class: temperature
+        state_class: measurement
+        unit_of_measurement: "°C"
+        icon: mdi:thermometer-auto
+        value_template: >-
+          {{ value_json.miner.cooling.settings.mode.param | default(0) | float(0) | round(1) }}
+
+      - name: "VNish ventilador 1 RPM"
+        unique_id: vnish_ventilador_1_rpm_api
+        state_class: measurement
+        unit_of_measurement: "rpm"
+        icon: mdi:fan
+        value_template: >-
+          {{ value_json.miner.cooling.fans[0].rpm | default(0) | int(0)
+             if value_json.miner.cooling.fans | default([]) | count > 0 else 0 }}
+
+      - name: "VNish ventilador 2 RPM"
+        unique_id: vnish_ventilador_2_rpm_api
+        state_class: measurement
+        unit_of_measurement: "rpm"
+        icon: mdi:fan
+        value_template: >-
+          {{ value_json.miner.cooling.fans[1].rpm | default(0) | int(0)
+             if value_json.miner.cooling.fans | default([]) | count > 1 else 0 }}
+
+      - name: "VNish ventilador 3 RPM"
+        unique_id: vnish_ventilador_3_rpm_api
+        state_class: measurement
+        unit_of_measurement: "rpm"
+        icon: mdi:fan
+        value_template: >-
+          {{ value_json.miner.cooling.fans[2].rpm | default(0) | int(0)
+             if value_json.miner.cooling.fans | default([]) | count > 2 else 0 }}
+
+      - name: "VNish ventilador 4 RPM"
+        unique_id: vnish_ventilador_4_rpm_api
+        state_class: measurement
+        unit_of_measurement: "rpm"
+        icon: mdi:fan
+        value_template: >-
+          {{ value_json.miner.cooling.fans[3].rpm | default(0) | int(0)
+             if value_json.miner.cooling.fans | default([]) | count > 3 else 0 }}
+
+      - name: "VNish frecuencia media"
+        unique_id: vnish_frecuencia_media_api
+        state_class: measurement
+        unit_of_measurement: "MHz"
+        icon: mdi:sine-wave
+        value_template: >-
+          {% set placas = value_json.miner.chains | default([], true) %}
+          {% if placas | count > 0 %}
+            {{ (placas | map(attribute='frequency') | map('float', 0)
+                | sum / (placas | count)) | round(1) }}
+          {% else %} 0 {% endif %}
+
+      - name: "VNish voltaje medio"
+        unique_id: vnish_voltaje_medio_api
+        device_class: voltage
+        state_class: measurement
+        unit_of_measurement: "V"
+        icon: mdi:flash-triangle
+        value_template: >-
+          {% set placas = value_json.miner.chains | default([], true) %}
+          {% if placas | count > 0 %}
+            {{ ((placas | map(attribute='voltage') | map('float', 0)
+                 | sum / (placas | count)) / 1000) | round(3) }}
+          {% else %} 0 {% endif %}
+
+      - name: "VNish placa 1 hashrate"
+        unique_id: vnish_placa_1_hashrate_api
+        state_class: measurement
+        unit_of_measurement: "TH/s"
+        icon: mdi:expansion-card
+        value_template: >-
+          {{ (value_json.miner.chains[0].hashrate_rt | default(0) | float(0) / 1000) | round(2)
+             if value_json.miner.chains | default([]) | count > 0 else 0 }}
+
+      - name: "VNish placa 2 hashrate"
+        unique_id: vnish_placa_2_hashrate_api
+        state_class: measurement
+        unit_of_measurement: "TH/s"
+        icon: mdi:expansion-card
+        value_template: >-
+          {{ (value_json.miner.chains[1].hashrate_rt | default(0) | float(0) / 1000) | round(2)
+             if value_json.miner.chains | default([]) | count > 1 else 0 }}
+
+      - name: "VNish placa 3 hashrate"
+        unique_id: vnish_placa_3_hashrate_api
+        state_class: measurement
+        unit_of_measurement: "TH/s"
+        icon: mdi:expansion-card
+        value_template: >-
+          {{ (value_json.miner.chains[2].hashrate_rt | default(0) | float(0) / 1000) | round(2)
+             if value_json.miner.chains | default([]) | count > 2 else 0 }}
+
+  - resource: http://192.168.1.108/api/v1/perf-summary
+    scan_interval: 30
+    timeout: 8
+    sensor:
+      - name: "VNish perfil activo"
+        unique_id: vnish_perfil_activo_api
+        icon: mdi:tune-variant
+        value_template: >-
+          {{ value_json.current_preset.pretty | default('Desconocido', true) }}
+        json_attributes_path: "$.current_preset"
+        json_attributes:
+          - name
+          - status
+
+      - name: "VNish frecuencia configurada"
+        unique_id: vnish_frecuencia_configurada_api
+        state_class: measurement
+        unit_of_measurement: "MHz"
+        icon: mdi:sine-wave
+        value_template: >-
+          {{ value_json.current_preset.globals.freq | default(0) | float(0) | round(1) }}
+
+      - name: "VNish voltaje configurado"
+        unique_id: vnish_voltaje_configurado_api
+        state_class: measurement
+        unit_of_measurement: "mV"
+        icon: mdi:flash
+        value_template: >-
+          {{ value_json.current_preset.globals.volt | default(0) | int(0) }}
+
+rest_command:
+  vnish_leer_ajustes:
+    url: "http://192.168.1.108/api/v1/settings"
+    method: GET
+    headers:
+      Authorization: "{{ token }}"
+    timeout: 10
+
+  vnish_guardar_overclock:
+    url: "http://192.168.1.108/api/v1/settings"
+    method: POST
+    headers:
+      Authorization: "{{ token }}"
+    content_type: "application/json"
+    payload: "{{ ajustes }}"
+    timeout: 20
+
+  vnish_desbloquear:
+    url: "http://192.168.1.108/api/v1/unlock"
+    method: POST
+    content_type: "application/json"
+    payload: >-
+      {"pw": {{ password | tojson }}}
+    timeout: 10
+
+  vnish_comando_mineria:
+    url: "http://192.168.1.108/api/v1/mining/{{ comando }}"
+    method: POST
+    headers:
+      Authorization: "{{ token }}"
+    content_type: "application/json"
+    payload: "{}"
+    timeout: 15
+
+  vnish_comando_sistema:
+    url: "http://192.168.1.108/api/v1/system/{{ comando }}"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ token }}"
+    content_type: "application/json"
+    payload: "{}"
+    timeout: 15
+
+  vnish_aplicar_throttle:
+    url: "http://192.168.1.108/api/v1/mining/throttle"
+    method: POST
+    headers:
+      Authorization: "{{ token }}"
+    content_type: "application/json"
+    payload: >-
+      {"percent": {{ porcentaje | int }}}
+    timeout: 15
+
+input_boolean:
+  vnish_proteccion_automatica:
+    name: "Antminer protección automática"
+    icon: mdi:shield-check
+    initial: true
+
+input_number:
+  vnish_throttle:
+    name: "Antminer rendimiento"
+    icon: mdi:gauge
+    min: 10
+    max: 100
+    step: 5
+    initial: 100
+    unit_of_measurement: "%"
+
+  vnish_temperatura_limite:
+    name: "Antminer temperatura máxima"
+    icon: mdi:thermometer-alert
+    min: 70
+    max: 100
+    step: 1
+    initial: 90
+    unit_of_measurement: "°C"
+
+  vnish_frecuencia_manual:
+    name: "Antminer frecuencia manual"
+    icon: mdi:sine-wave
+    min: 200
+    max: 700
+    step: 5
+    initial: 400
+    unit_of_measurement: "MHz"
+
+  vnish_voltaje_manual:
+    name: "Antminer voltaje manual"
+    icon: mdi:flash
+    min: 1050
+    max: 1400
+    step: 5
+    initial: 1225
+    unit_of_measurement: "mV"
+
+  vnish_ventilador_temperatura_objetivo:
+    name: "Antminer temperatura objetivo ventiladores"
+    icon: mdi:thermometer-auto
+    min: 50
+    max: 90
+    step: 1
+    initial: 75
+    unit_of_measurement: "°C"
+
+  vnish_ventilador_pwm_minimo:
+    name: "Antminer PWM mínimo ventiladores"
+    icon: mdi:fan-minus
+    min: 10
+    max: 100
+    step: 1
+    initial: 17
+    unit_of_measurement: "%"
+
+  vnish_ventilador_pwm_maximo:
+    name: "Antminer PWM máximo ventiladores"
+    icon: mdi:fan-plus
+    min: 10
+    max: 100
+    step: 1
+    initial: 62
+    unit_of_measurement: "%"
+
+  vnish_ventiladores_minimos:
+    name: "Antminer ventiladores mínimos"
+    icon: mdi:fan-alert
+    min: 1
+    max: 4
+    step: 1
+    initial: 2
+
+input_select:
+  vnish_perfil_objetivo:
+    name: "Antminer perfil objetivo"
+    icon: mdi:tune-variant
+    options:
+      - "1680 vatios ~ 57 TH"
+      - "1830 vatios ~ 62 TH"
+      - "2010 vatios ~ 67 TH"
+      - "2160 vatios ~ 73 TH"
+      - "2310 vatios ~ 78 TH"
+      - "2490 vatios ~ 83 TH"
+      - "2640 vatios ~ 89 TH"
+      - "2790 vatios ~ 94 TH"
+      - "2970 vatios ~ 99 TH"
+      - "3120 vatios ~ 105 TH"
+      - "3270 vatios ~ 110 TH"
+      - "3450 vatios ~ 115 TH"
+      - "3600 vatios ~ 121 TH"
+      - "3750 vatios ~ 126 TH"
+      - "3930 vatios ~ 131 TH"
+      - "4080 vatios ~ 136 TH"
+      - "4230 vatios ~ 142 TH"
+      - "4410 vatios ~ 147 TH"
+      - "4560 vatios ~ 152 TH"
+      - "4710 vatios ~ 158 TH"
+      - "4890 vatios ~ 163 TH"
+      - "5040 vatios ~ 168 TH"
+      - "5190 vatios ~ 174 TH"
+      - "5370 vatios ~ 179 TH"
+      - "5520 vatios ~ 184 TH"
+    initial: "1680 vatios ~ 57 TH"
+
+script:
+  vnish_aplicar_ventiladores:
+    alias: "Antminer - Aplicar configuración ventiladores"
+    icon: mdi:fan-cog
+    mode: single
+    sequence:
+      - condition: template
+        value_template: >-
+          {{ states('input_number.vnish_ventilador_pwm_minimo') | int <=
+             states('input_number.vnish_ventilador_pwm_maximo') | int }}
+      - action: rest_command.vnish_desbloquear
+        data:
+          password: !secret vnish_password
+        response_variable: vnish_login
+      - variables:
+          vnish_token: >-
+            {% if vnish_login.content is mapping %}
+              {{ vnish_login.content.token | default('') }}
+            {% else %}
+              {{ (vnish_login.content | default('{}', true) | from_json({})).token | default('') }}
+            {% endif %}
+      - condition: template
+        value_template: "{{ vnish_login.status == 200 and vnish_token | length > 10 }}"
+      - action: rest_command.vnish_leer_ajustes
+        data:
+          token: "{{ vnish_token }}"
+        response_variable: vnish_ajustes_respuesta
+      - variables:
+          vnish_ajustes: >-
+            {% if vnish_ajustes_respuesta.content is mapping %}
+              {{ vnish_ajustes_respuesta.content }}
+            {% else %}
+              {{ vnish_ajustes_respuesta.content | default('{}', true) | from_json({}) }}
+            {% endif %}
+      - condition: template
+        value_template: >-
+          {{ vnish_ajustes_respuesta.status == 200 and
+             vnish_ajustes is mapping and
+             vnish_ajustes.miner is defined and
+             vnish_ajustes.miner.cooling is defined and
+             vnish_ajustes.miner.cooling.mode is defined }}
+      - variables:
+          vnish_modo_ventilador_nuevo: >-
+            {{ vnish_ajustes.miner.cooling.mode | combine({
+                 'param': states('input_number.vnish_ventilador_temperatura_objetivo') | int
+               }, recursive=true) }}
+          vnish_cooling_nuevo: >-
+            {{ vnish_ajustes.miner.cooling | combine({
+                 'mode': vnish_modo_ventilador_nuevo,
+                 'fan_min_count': states('input_number.vnish_ventiladores_minimos') | int,
+                 'fan_min_duty': states('input_number.vnish_ventilador_pwm_minimo') | int,
+                 'fan_max_duty': states('input_number.vnish_ventilador_pwm_maximo') | int
+               }, recursive=true) }}
+          vnish_payload_ventiladores: >-
+            {{ {'miner': {'cooling': vnish_cooling_nuevo}} | to_json }}
+      - action: rest_command.vnish_guardar_overclock
+        data:
+          ajustes: "{{ vnish_payload_ventiladores }}"
+          token: "{{ vnish_token }}"
+        response_variable: vnish_ventiladores_resultado
+      - condition: template
+        value_template: "{{ vnish_ventiladores_resultado.status == 200 }}"
+      - action: script.vnish_reiniciar_backend
+      - action: persistent_notification.create
+        data:
+          title: "Antminer: ventiladores configurados"
+          message: >-
+            Objetivo {{ states('input_number.vnish_ventilador_temperatura_objetivo') | int }} °C,
+            PWM {{ states('input_number.vnish_ventilador_pwm_minimo') | int }}–
+            {{ states('input_number.vnish_ventilador_pwm_maximo') | int }} %.
+
+  vnish_aplicar_perfil:
+    alias: "Antminer - Aplicar perfil"
+    icon: mdi:tune-variant
+    mode: single
+    sequence:
+      - action: rest_command.vnish_desbloquear
+        data:
+          password: !secret vnish_password
+        response_variable: vnish_login
+      - variables:
+          vnish_token: >-
+            {% if vnish_login.content is mapping %}
+              {{ vnish_login.content.token | default('') }}
+            {% else %}
+              {{ (vnish_login.content | default('{}', true) | from_json({})).token | default('') }}
+            {% endif %}
+      - condition: template
+        value_template: "{{ vnish_login.status == 200 and vnish_token | length > 10 }}"
+      - action: rest_command.vnish_leer_ajustes
+        data:
+          token: "{{ vnish_token }}"
+        response_variable: vnish_ajustes_respuesta
+      - variables:
+          vnish_ajustes: >-
+            {% if vnish_ajustes_respuesta.content is mapping %}
+              {{ vnish_ajustes_respuesta.content }}
+            {% else %}
+              {{ vnish_ajustes_respuesta.content | default('{}', true) | from_json({}) }}
+            {% endif %}
+      - condition: template
+        value_template: >-
+          {{ vnish_ajustes_respuesta.status == 200 and
+             vnish_ajustes is mapping and
+             vnish_ajustes.miner is defined and
+             vnish_ajustes.miner.overclock is defined }}
+      - variables:
+          vnish_perfil_vatios: >-
+            {{ states('input_select.vnish_perfil_objetivo').split()[0] }}
+          vnish_overclock_nuevo: >-
+            {{ vnish_ajustes.miner.overclock |
+               combine({'preset': vnish_perfil_vatios}, recursive=true) }}
+          vnish_payload_perfil: >-
+            {{ {'miner': {'overclock': vnish_overclock_nuevo}} | to_json }}
+      - action: rest_command.vnish_guardar_overclock
+        data:
+          ajustes: "{{ vnish_payload_perfil }}"
+          token: "{{ vnish_token }}"
+        response_variable: vnish_perfil_resultado
+      - condition: template
+        value_template: "{{ vnish_perfil_resultado.status == 200 }}"
+      - action: script.vnish_reiniciar_backend
+      - action: persistent_notification.create
+        data:
+          title: "Antminer: perfil aplicado"
+          message: >-
+            Perfil {{ states('input_select.vnish_perfil_objetivo') }} solicitado.
+            HTTP {{ vnish_perfil_resultado.status | default('sin respuesta') }}.
+            Los perfiles sin ajustar iniciarán el proceso de autotune de VNish.
+
+  vnish_aplicar_manual:
+    alias: "Antminer - Aplicar frecuencia y voltaje"
+    icon: mdi:engine
+    mode: single
+    sequence:
+      - action: rest_command.vnish_desbloquear
+        data:
+          password: !secret vnish_password
+        response_variable: vnish_login
+      - variables:
+          vnish_token: >-
+            {% if vnish_login.content is mapping %}
+              {{ vnish_login.content.token | default('') }}
+            {% else %}
+              {{ (vnish_login.content | default('{}', true) | from_json({})).token | default('') }}
+            {% endif %}
+      - condition: template
+        value_template: "{{ vnish_login.status == 200 and vnish_token | length > 10 }}"
+      - action: rest_command.vnish_leer_ajustes
+        data:
+          token: "{{ vnish_token }}"
+        response_variable: vnish_ajustes_respuesta
+      - variables:
+          vnish_ajustes: >-
+            {% if vnish_ajustes_respuesta.content is mapping %}
+              {{ vnish_ajustes_respuesta.content }}
+            {% else %}
+              {{ vnish_ajustes_respuesta.content | default('{}', true) | from_json({}) }}
+            {% endif %}
+      - condition: template
+        value_template: >-
+          {{ vnish_ajustes_respuesta.status == 200 and
+             vnish_ajustes is mapping and
+             vnish_ajustes.miner is defined and
+             vnish_ajustes.miner.overclock is defined and
+             vnish_ajustes.miner.overclock.globals is defined }}
+      - variables:
+          vnish_globales_nuevos: >-
+            {{ vnish_ajustes.miner.overclock.globals | combine({
+                 'freq': states('input_number.vnish_frecuencia_manual') | int,
+                 'volt': states('input_number.vnish_voltaje_manual') | int
+               }, recursive=true) }}
+          vnish_cadenas_manuales: >-
+            {% set ns = namespace(cadenas=[]) %}
+            {% for cadena in vnish_ajustes.miner.overclock.chains | default([], true) %}
+              {% set ns.cadenas = ns.cadenas +
+                 [cadena | combine({'freq': 0}, recursive=true)] %}
+            {% endfor %}
+            {{ ns.cadenas }}
+          vnish_overclock_nuevo: >-
+            {{ vnish_ajustes.miner.overclock | combine({
+                 'preset': 'disabled',
+                 'globals': vnish_globales_nuevos,
+                 'chains': vnish_cadenas_manuales
+               }, recursive=true) }}
+          vnish_payload_manual: >-
+            {{ {'miner': {'overclock': vnish_overclock_nuevo}} | to_json }}
+      - action: rest_command.vnish_guardar_overclock
+        data:
+          ajustes: "{{ vnish_payload_manual }}"
+          token: "{{ vnish_token }}"
+        response_variable: vnish_manual_resultado
+      - condition: template
+        value_template: "{{ vnish_manual_resultado.status == 200 }}"
+      - action: script.vnish_reiniciar_backend
+      - action: persistent_notification.create
+        data:
+          title: "Antminer: ajuste manual aplicado"
+          message: >-
+            {{ states('input_number.vnish_frecuencia_manual') | int }} MHz y
+            {{ states('input_number.vnish_voltaje_manual') | int }} mV.
+            HTTP {{ vnish_manual_resultado.status | default('sin respuesta') }}.
+
+  vnish_aplicar_throttle:
+    alias: "Antminer - Aplicar rendimiento"
+    icon: mdi:gauge
+    mode: restart
+    sequence:
+      - action: rest_command.vnish_desbloquear
+        data:
+          password: !secret vnish_password
+        response_variable: vnish_login
+      - variables:
+          vnish_token: >-
+            {% if vnish_login.content is mapping %}
+              {{ vnish_login.content.token | default('') }}
+            {% else %}
+              {{ (vnish_login.content | default('{}', true) | from_json({})).token | default('') }}
+            {% endif %}
+      - if:
+          - condition: template
+            value_template: "{{ vnish_login.status == 200 and vnish_token | length > 10 }}"
+        then:
+          - action: rest_command.vnish_aplicar_throttle
+            data:
+              token: "{{ vnish_token }}"
+              porcentaje: "{{ states('input_number.vnish_throttle') | int(100) }}"
+            response_variable: vnish_throttle_resultado
+          - action: persistent_notification.create
+            data:
+              title: "Antminer: rendimiento aplicado"
+              message: >-
+                Se ha solicitado el {{ states('input_number.vnish_throttle') | int }} %.
+                HTTP {{ vnish_throttle_resultado.status | default('sin respuesta') }}.
+                {% if vnish_throttle_resultado.content is mapping %}
+                  Reinicio necesario: {{ vnish_throttle_resultado.content.restart_required | default(false) }}.
+                  Reinicio completo necesario: {{ vnish_throttle_resultado.content.reboot_required | default(false) }}.
+                {% endif %}
+        else:
+          - action: persistent_notification.create
+            data:
+              title: "Antminer: error de autenticación"
+              message: "VNish no entregó un token válido para aplicar el rendimiento."
+          - stop: "No se pudo obtener el token VNish"
+            error: true
+
+  vnish_ejecutar_comando:
+    alias: "Antminer - Ejecutar comando VNish"
+    mode: queued
+    max: 5
+    fields:
+      comando:
+        name: Comando
+        required: true
+        selector:
+          select:
+            options:
+              - pause
+              - resume
+              - stop
+              - start
+              - restart
+    sequence:
+      - action: rest_command.vnish_desbloquear
+        data:
+          password: !secret vnish_password
+        response_variable: vnish_login
+      - variables:
+          vnish_token: >-
+            {% if vnish_login.content is mapping %}
+              {{ vnish_login.content.token | default('') }}
+            {% else %}
+              {{ (vnish_login.content | default('{}', true) | from_json({})).token | default('') }}
+            {% endif %}
+      - if:
+          - condition: template
+            value_template: "{{ vnish_login.status == 200 and vnish_token | length > 10 }}"
+        then:
+          - action: rest_command.vnish_comando_mineria
+            data:
+              comando: "{{ comando }}"
+              token: "{{ vnish_token }}"
+            response_variable: vnish_resultado
+        else:
+          - action: persistent_notification.create
+            data:
+              title: "Antminer: error de autenticación"
+              message: >-
+                VNish no entregó un token válido. HTTP
+                {{ vnish_login.status | default('sin respuesta') }}.
+          - stop: "No se pudo obtener el token VNish"
+            error: true
+
+  vnish_pausar:
+    alias: "Antminer - Pausar minería"
+    icon: mdi:pause
+    sequence:
+      - action: script.vnish_ejecutar_comando
+        data:
+          comando: pause
+
+  vnish_reanudar:
+    alias: "Antminer - Reanudar minería"
+    icon: mdi:play
+    sequence:
+      - action: script.vnish_ejecutar_comando
+        data:
+          comando: resume
+
+  vnish_arrancar:
+    alias: "Antminer - Arrancar backend"
+    icon: mdi:power
+    sequence:
+      - action: script.vnish_ejecutar_comando
+        data:
+          comando: start
+
+  vnish_detener:
+    alias: "Antminer - Detener backend"
+    icon: mdi:stop
+    sequence:
+      - action: script.vnish_ejecutar_comando
+        data:
+          comando: stop
+
+  vnish_reiniciar_backend:
+    alias: "Antminer - Reiniciar backend"
+    icon: mdi:restart
+    sequence:
+      - action: script.vnish_ejecutar_comando
+        data:
+          comando: restart
+
+  vnish_reiniciar_equipo:
+    alias: "Antminer - Reiniciar equipo completo"
+    icon: mdi:restart-alert
+    mode: single
+    sequence:
+      - action: rest_command.vnish_desbloquear
+        data:
+          password: !secret vnish_password
+        response_variable: vnish_login
+      - variables:
+          vnish_token: >-
+            {% if vnish_login.content is mapping %}
+              {{ vnish_login.content.token | default('') }}
+            {% else %}
+              {{ (vnish_login.content | default('{}', true) | from_json({})).token | default('') }}
+            {% endif %}
+      - condition: template
+        value_template: "{{ vnish_login.status == 200 and vnish_token | length > 10 }}"
+      - action: rest_command.vnish_comando_sistema
+        data:
+          comando: reboot
+          token: "{{ vnish_token }}"
+
+template:
+  - binary_sensor:
+      - name: "VNish disponible"
+        unique_id: vnish_disponible_api
+        device_class: connectivity
+        state: >-
+          {{ states('sensor.vnish_estado_api') not in
+             ['unknown', 'unavailable', 'desconocido', ''] }}
+
+      - name: "VNish minando"
+        unique_id: vnish_minando_api
+        icon: mdi:pickaxe
+        state: >-
+          {% set estado = states('sensor.vnish_estado_api') | lower %}
+          {{ estado in ['mining', 'running', 'tuning', 'minando'] or
+             states('sensor.vnish_hashrate') | float(0) > 0.5 }}
+
+      - name: "VNish sobretemperatura"
+        unique_id: vnish_sobretemperatura_api
+        device_class: heat
+        state: >-
+          {{ states('sensor.vnish_temperatura_chips') | float(0) >=
+             states('input_number.vnish_temperatura_limite') | float(90) }}
+
+  - switch:
+      - name: "Antminer minería"
+        unique_id: antminer_mineria_api
+        icon: mdi:pickaxe
+        state: "{{ is_state('binary_sensor.vnish_minando', 'on') }}"
+        availability: "{{ is_state('binary_sensor.vnish_disponible', 'on') }}"
+        turn_on:
+          - action: script.vnish_reanudar
+        turn_off:
+          - action: script.vnish_pausar
+
+  - button:
+      - name: "Antminer aplicar ventiladores"
+        unique_id: antminer_aplicar_ventiladores_api
+        icon: mdi:fan-cog
+        press:
+          - action: script.vnish_aplicar_ventiladores
+
+      - name: "Antminer aplicar perfil"
+        unique_id: antminer_aplicar_perfil_api
+        icon: mdi:tune-variant
+        press:
+          - action: script.vnish_aplicar_perfil
+
+      - name: "Antminer aplicar ajuste manual"
+        unique_id: antminer_aplicar_ajuste_manual_api
+        icon: mdi:engine
+        press:
+          - action: script.vnish_aplicar_manual
+
+      - name: "Antminer aplicar rendimiento"
+        unique_id: antminer_aplicar_rendimiento_api
+        icon: mdi:gauge
+        press:
+          - action: script.vnish_aplicar_throttle
+
+      - name: "Antminer reiniciar backend"
+        unique_id: antminer_reiniciar_backend_api
+        icon: mdi:restart
+        press:
+          - action: script.vnish_reiniciar_backend
+
+      - name: "Antminer reiniciar equipo"
+        unique_id: antminer_reiniciar_equipo_api
+        icon: mdi:restart-alert
+        press:
+          - action: script.vnish_reiniciar_equipo
+
+automation:
+  - id: vnish_proteccion_sobretemperatura
+    alias: "Antminer - Protección por sobretemperatura"
+    mode: single
+    triggers:
+      - trigger: template
+        value_template: >-
+          {{ states('sensor.vnish_temperatura_chips') | float(0) >=
+             states('input_number.vnish_temperatura_limite') | float(90) }}
+        for: "00:00:30"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.vnish_proteccion_automatica
+        state: "on"
+      - condition: state
+        entity_id: binary_sensor.vnish_minando
+        state: "on"
+    actions:
+      - action: script.vnish_pausar
+      - action: persistent_notification.create
+        data:
+          title: "Antminer pausado por temperatura"
+          message: >-
+            VNish alcanzó {{ states('sensor.vnish_temperatura_chips') }} °C.
+            La minería se ha pausado automáticamente.
+
+  - id: vnish_watchdog_sin_hashrate
+    alias: "Antminer - Watchdog sin hashrate"
+    mode: single
+    triggers:
+      - trigger: numeric_state
+        entity_id: sensor.vnish_hashrate
+        below: 0.5
+        for: "00:10:00"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.vnish_proteccion_automatica
+        state: "on"
+      - condition: template
+        value_template: >-
+          {{ states('sensor.vnish_estado_api') | lower in
+             ['mining', 'running', 'tuning', 'minando'] }}
+      - condition: state
+        entity_id: binary_sensor.vnish_sobretemperatura
+        state: "off"
+    actions:
+      - action: script.vnish_reiniciar_backend
+      - action: persistent_notification.create
+        data:
+          title: "Antminer: watchdog activado"
+          message: >-
+            El hashrate permaneció por debajo de 0.5 TH/s durante 10 minutos.
+            Se ha reiniciado el backend de VNish.
+
+  - id: vnish_aviso_desconexion
+    alias: "Antminer - Aviso de desconexión"
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.vnish_disponible
+        to: "off"
+        for: "00:05:00"
+    actions:
+      - action: persistent_notification.create
+        data:
+          title: "Antminer sin conexión"
+          message: >-
+            Home Assistant no recibe respuesta de VNish en 192.168.1.108
+            desde hace al menos 5 minutos.
