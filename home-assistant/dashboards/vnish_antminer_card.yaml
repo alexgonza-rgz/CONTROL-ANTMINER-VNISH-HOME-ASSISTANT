@@ -96,7 +96,7 @@ cards:
       - entity: sensor.vnish_frecuencia_media
         name: Frecuencia media
       - entity: sensor.vnish_voltaje_medio
-        name: Voltaje medio real
+        name: Alimentación media de placas
 
   - type: grid
     columns: 3
@@ -190,7 +190,7 @@ cards:
       - entity: sensor.vnish_frecuencia_configurada
         name: Frecuencia del perfil
       - entity: sensor.vnish_voltaje_configurado
-        name: Voltaje del perfil
+        name: Voltaje ASIC del perfil
 
   - type: button
     entity: button.antminer_aplicar_perfil
@@ -213,7 +213,7 @@ cards:
       - entity: input_number.vnish_frecuencia_manual
         name: Frecuencia
       - entity: input_number.vnish_voltaje_manual
-        name: Voltaje
+        name: Voltaje ASIC
 
   - type: button
     entity: button.antminer_aplicar_ajuste_manual
