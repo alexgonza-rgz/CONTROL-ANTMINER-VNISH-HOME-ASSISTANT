@@ -184,6 +184,7 @@ rest:
         device_class: voltage
         state_class: measurement
         unit_of_measurement: "V"
+        suggested_display_precision: 2
         icon: mdi:flash-triangle
         value_template: >-
           {% set placas = value_json.miner.chains | default([], true) %}
@@ -243,11 +244,13 @@ rest:
 
       - name: "VNish voltaje configurado"
         unique_id: vnish_voltaje_configurado_api
+        device_class: voltage
         state_class: measurement
-        unit_of_measurement: "mV"
+        unit_of_measurement: "V"
+        suggested_display_precision: 2
         icon: mdi:flash
         value_template: >-
-          {{ value_json.current_preset.globals.volt | default(0) | int(0) }}
+          {{ (value_json.current_preset.globals.volt | default(0) | float(0) / 100) | round(2) }}
 
 rest_command:
   vnish_leer_ajustes:
